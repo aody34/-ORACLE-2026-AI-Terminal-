@@ -1,0 +1,342 @@
+@import "tailwindcss";
+
+/* $ORACLE 2026 Design System */
+/* High-Level Institutional Future Aesthetic */
+
+:root {
+  /* Core Colors */
+  --oracle-bg: #050505;
+  --oracle-bg-secondary: #0a0a0a;
+  --oracle-surface: rgba(15, 15, 15, 0.8);
+  --oracle-glass: rgba(255, 255, 255, 0.03);
+  --oracle-border: rgba(255, 255, 255, 0.08);
+  
+  /* Accent Colors */
+  --oracle-emerald: #10B981;
+  --oracle-emerald-glow: rgba(16, 185, 129, 0.4);
+  --oracle-crimson: #EF4444;
+  --oracle-crimson-glow: rgba(239, 68, 68, 0.4);
+  --oracle-gold: #F59E0B;
+  --oracle-purple: #8B5CF6;
+  --oracle-cyan: #06B6D4;
+  
+  /* Text Colors */
+  --oracle-text-primary: #FFFFFF;
+  --oracle-text-secondary: rgba(255, 255, 255, 0.6);
+  --oracle-text-muted: rgba(255, 255, 255, 0.4);
+  
+  /* Fonts */
+  --font-mono: 'Space Mono', 'Fira Code', 'JetBrains Mono', monospace;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+@theme inline {
+  --color-background: var(--oracle-bg);
+  --color-foreground: var(--oracle-text-primary);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background: var(--oracle-bg);
+  color: var(--oracle-text-primary);
+  font-family: var(--font-sans);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Glassmorphism Effects */
+.glass {
+  background: var(--oracle-glass);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--oracle-border);
+  border-radius: 16px;
+}
+
+.glass-heavy {
+  background: rgba(10, 10, 10, 0.9);
+  backdrop-filter: blur(40px);
+  -webkit-backdrop-filter: blur(40px);
+  border: 1px solid var(--oracle-border);
+  border-radius: 20px;
+}
+
+/* Glow Effects */
+.glow-emerald {
+  box-shadow: 0 0 40px var(--oracle-emerald-glow),
+              0 0 80px rgba(16, 185, 129, 0.2),
+              inset 0 0 20px rgba(16, 185, 129, 0.05);
+}
+
+.glow-crimson {
+  box-shadow: 0 0 40px var(--oracle-crimson-glow),
+              0 0 80px rgba(239, 68, 68, 0.2),
+              inset 0 0 20px rgba(239, 68, 68, 0.05);
+}
+
+.glow-pulse {
+  animation: glow-pulse 2s ease-in-out infinite;
+}
+
+@keyframes glow-pulse {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.2); }
+}
+
+/* Gradient Text */
+.gradient-text {
+  background: linear-gradient(135deg, var(--oracle-emerald) 0%, var(--oracle-cyan) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.gradient-text-crimson {
+  background: linear-gradient(135deg, var(--oracle-crimson) 0%, var(--oracle-gold) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Terminal Style */
+.terminal-text {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  letter-spacing: 0.05em;
+}
+
+.terminal-cursor {
+  animation: blink 1s step-end infinite;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* Scanline Effect */
+.scanlines::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.1) 2px,
+    rgba(0, 0, 0, 0.1) 4px
+  );
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* Grid Background */
+.grid-bg {
+  background-image: 
+    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+  background-size: 50px 50px;
+}
+
+/* Sector Box Styles */
+.sector-box {
+  position: relative;
+  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+
+.sector-box::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, transparent 0%, rgba(255, 255, 255, 0.02) 100%);
+  pointer-events: none;
+}
+
+.sector-box:hover {
+  transform: translateY(-5px) scale(1.02);
+}
+
+/* Input Styles */
+.oracle-input {
+  background: var(--oracle-glass);
+  border: 1px solid var(--oracle-border);
+  border-radius: 12px;
+  padding: 16px 24px;
+  font-family: var(--font-mono);
+  font-size: 18px;
+  color: var(--oracle-text-primary);
+  width: 100%;
+  transition: all 0.3s ease;
+}
+
+.oracle-input:focus {
+  outline: none;
+  border-color: var(--oracle-emerald);
+  box-shadow: 0 0 20px var(--oracle-emerald-glow);
+}
+
+.oracle-input::placeholder {
+  color: var(--oracle-text-muted);
+}
+
+/* Card Animations */
+.prophecy-card {
+  animation: card-appear 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes card-appear {
+  0% {
+    opacity: 0;
+    transform: translateY(30px) scale(0.95);
+    filter: blur(10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+/* Scanning Animation */
+.scanning-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--oracle-emerald),
+    transparent
+  );
+  animation: scan 2s ease-in-out infinite;
+}
+
+@keyframes scan {
+  0% { top: 0; opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { top: 100%; opacity: 0; }
+}
+
+/* RSI Gauge */
+.rsi-gauge {
+  height: 8px;
+  border-radius: 4px;
+  background: linear-gradient(
+    90deg,
+    var(--oracle-emerald) 0%,
+    var(--oracle-gold) 50%,
+    var(--oracle-crimson) 100%
+  );
+  position: relative;
+}
+
+.rsi-marker {
+  position: absolute;
+  top: -4px;
+  width: 16px;
+  height: 16px;
+  background: white;
+  border-radius: 50%;
+  transform: translateX(-50%);
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+}
+
+/* Floating Particles */
+.particles {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 0;
+}
+
+.particle {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  background: var(--oracle-emerald);
+  border-radius: 50%;
+  opacity: 0.3;
+  animation: float 15s infinite linear;
+}
+
+@keyframes float {
+  0% {
+    transform: translateY(100vh) rotate(0deg);
+    opacity: 0;
+  }
+  10% { opacity: 0.3; }
+  90% { opacity: 0.3; }
+  100% {
+    transform: translateY(-100vh) rotate(720deg);
+    opacity: 0;
+  }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--oracle-bg-secondary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--oracle-border);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* Loading States */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--oracle-glass) 25%,
+    rgba(255, 255, 255, 0.05) 50%,
+    var(--oracle-glass) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.5s infinite;
+}
+
+@keyframes skeleton-loading {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Sector Colors */
+.sector-ai {
+  --sector-color: var(--oracle-purple);
+  --sector-glow: rgba(139, 92, 246, 0.3);
+}
+
+.sector-rwa {
+  --sector-color: var(--oracle-gold);
+  --sector-glow: rgba(245, 158, 11, 0.3);
+}
+
+.sector-meme {
+  --sector-color: var(--oracle-cyan);
+  --sector-glow: rgba(6, 182, 212, 0.3);
+}
+
+/* Responsive Typography */
+@media (max-width: 768px) {
+  .oracle-input {
+    font-size: 16px;
+    padding: 12px 16px;
+  }
+}
