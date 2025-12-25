@@ -10,7 +10,7 @@ import { fetchCMCData, analyzeMomentum, getRankingTier } from '@/lib/coinmarketc
 import {
     lookupToken,
     isContractAddress,
-    getTokenCategory,
+    detectCategory,
     getCategoryEmoji,
     formatMarketCap,
     TokenLookupResult
