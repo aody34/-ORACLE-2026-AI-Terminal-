@@ -1,5 +1,5 @@
 // Main Oracle API Endpoint for $ORACLE 2026 Terminal
-// Returns prophecy predictions aggregating CoinGecko, DexScreener, and CoinMarketCap data
+// Returns prophecy predictions aggregating DexScreener, CoinGecko, and CoinMarketCap data
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getCoinByTicker, fetchHistoricalData, COIN_IDS, SECTORS } from '@/lib/coingecko';
@@ -7,11 +7,18 @@ import { getTechnicalAnalysis, extractClosingPrices } from '@/lib/technical-anal
 import { generateProphecy, PredictionInput } from '@/lib/gemini-brain';
 import { fetchDexScreenerData, getDexSentiment } from '@/lib/dexscreener';
 import { fetchCMCData, analyzeMomentum, getRankingTier } from '@/lib/coinmarketcap';
-import { isContractAddress, lookupByAddress, getBestTokenImage } from '@/lib/token-images';
+import {
+    lookupToken,
+    isContractAddress,
+    getTokenCategory,
+    getCategoryEmoji,
+    formatMarketCap,
+    TokenLookupResult
+} from '@/lib/token-lookup';
 
 export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
-    let input = searchParams.get('ticker')?.trim() || '';
+    const input = searchParams.get('ticker')?.trim() || '';
 
     if (!input) {
         return NextResponse.json(
@@ -20,100 +27,96 @@ export async function GET(request: NextRequest) {
         );
     }
 
-    // Check if input is a contract address
-    const isAddress = isContractAddress(input);
-    let ticker = input.toUpperCase();
-    let addressLookupResult = null;
+    try {
+        // First, lookup the token (works for both addresses and symbols)
+        console.log('Oracle API: Looking up input:', input);
+        const tokenInfo = await lookupToken(input);
 
-    // If it's an address, lookup the token info first
-    if (isAddress) {
-        addressLookupResult = await lookupByAddress(input);
-        if (addressLookupResult) {
-            ticker = addressLookupResult.symbol.toUpperCase();
-        } else {
+        // Check if we found the token
+        if (!tokenInfo) {
             return NextResponse.json(
                 {
-                    error: 'Could not find token for this address.',
-                    hint: 'Make sure the address is correct and has trading activity on DEX.'
+                    error: `Could not find token for "${input}".`,
+                    hint: isContractAddress(input)
+                        ? 'Make sure the contract address is correct and has trading activity on DEX.'
+                        : 'Try a different ticker or paste a contract address from DexScreener.',
                 },
                 { status: 404 }
             );
         }
-    }
 
-    // Get coin ID - if not in our list, we'll still try with DEX data
-    const coinId = COIN_IDS[ticker];
-    const isKnownCoin = !!coinId;
+        console.log('Oracle API: Found token:', tokenInfo.symbol, 'Image:', tokenInfo.imageUrl);
 
-    try {
-        // Fetch data from all sources in parallel
-        // For unknown coins, we'll rely more on DEX data
-        const [coinData, historicalData, dexData, cmcData] = await Promise.all([
+        const ticker = tokenInfo.symbol;
+
+        // Get coin ID for CoinGecko historical data
+        const coinId = COIN_IDS[ticker];
+        const isKnownCoin = !!coinId;
+
+        // Fetch additional data in parallel
+        const [coinData, historicalData, cmcData] = await Promise.all([
             isKnownCoin ? getCoinByTicker(ticker) : null,
             isKnownCoin && coinId ? fetchHistoricalData(coinId, 30) : Promise.resolve({ prices: [] as [number, number][], market_caps: [], total_volumes: [] }),
-            fetchDexScreenerData(ticker),  // Always try DEX
-            fetchCMCData(ticker),          // Will return mock if not found
+            fetchCMCData(ticker),
         ]);
 
-        // If no CoinGecko data, try to use DEX data
-        const effectiveCoinData = coinData || (dexData ? {
+        // Use token info from DexScreener as primary source
+        const priceData = {
             id: ticker.toLowerCase(),
             symbol: ticker.toLowerCase(),
-            name: dexData.ticker,
-            current_price: dexData.priceUsd,
-            market_cap: dexData.marketCap,
-            total_volume: dexData.volume24h,
-            price_change_percentage_24h: dexData.priceChange24h,
-            high_24h: dexData.priceUsd * 1.05,
-            low_24h: dexData.priceUsd * 0.95,
-        } : null);
-
-        if (!effectiveCoinData && !dexData) {
-            return NextResponse.json(
-                {
-                    error: `Could not find data for ${ticker}. Try a different ticker.`,
-                    hint: 'Supported tickers include BTC, ETH, SOL, PEPE, FET, DOGE, SHIB, ARB, and 60+ more.'
-                },
-                { status: 404 }
-            );
-        }
-
-        // Use DEX data as fallback for price info
-        const priceData = effectiveCoinData || {
-            id: ticker.toLowerCase(),
-            symbol: ticker.toLowerCase(),
-            name: ticker,
-            current_price: dexData?.priceUsd || 0,
-            market_cap: dexData?.marketCap || 0,
-            total_volume: dexData?.volume24h || 0,
-            price_change_percentage_24h: dexData?.priceChange24h || 0,
-            high_24h: 0,
-            low_24h: 0,
+            name: tokenInfo.name,
+            current_price: tokenInfo.price,
+            market_cap: tokenInfo.marketCap,
+            total_volume: tokenInfo.volume24h,
+            price_change_percentage_24h: tokenInfo.priceChange24h,
+            high_24h: tokenInfo.price * 1.05,
+            low_24h: tokenInfo.price * 0.95,
         };
 
-        // Calculate technical indicators (use mock if no historical data)
+        // Calculate technical indicators
         const prices = historicalData.prices.length > 0
             ? extractClosingPrices(historicalData)
             : Array.from({ length: 30 }, (_, i) => priceData.current_price * (1 + (Math.random() - 0.5) * 0.1));
         const technicalAnalysis = getTechnicalAnalysis(prices);
 
-        // Analyze DEX sentiment
-        const dexSentiment = dexData ? getDexSentiment(dexData) : null;
+        // Analyze DEX sentiment from token info
+        const dexSentiment = tokenInfo.buys24h > 0 || tokenInfo.sells24h > 0
+            ? getDexSentiment({
+                ticker,
+                tokenName: tokenInfo.name,
+                priceUsd: tokenInfo.price,
+                volume24h: tokenInfo.volume24h,
+                volume6h: tokenInfo.volume24h * 0.25,
+                volume1h: tokenInfo.volume24h * 0.04,
+                liquidityUsd: tokenInfo.liquidity,
+                fdv: tokenInfo.fdv,
+                marketCap: tokenInfo.marketCap,
+                priceChange24h: tokenInfo.priceChange24h,
+                priceChange6h: tokenInfo.priceChange24h * 0.4,
+                priceChange1h: tokenInfo.priceChange24h * 0.1,
+                buys24h: tokenInfo.buys24h,
+                sells24h: tokenInfo.sells24h,
+                buysSellsRatio: tokenInfo.sells24h > 0 ? tokenInfo.buys24h / tokenInfo.sells24h : 1,
+                dexId: tokenInfo.dexId || 'unknown',
+                pairAddress: tokenInfo.pairAddress || '',
+                topPairsCount: 1,
+                chain: tokenInfo.chain || 'ethereum',
+                imageUrl: tokenInfo.imageUrl,
+            })
+            : null;
 
         // Analyze CMC momentum
         const momentum = cmcData ? analyzeMomentum(cmcData) : null;
         const rankingTier = cmcData ? getRankingTier(cmcData.rank) : null;
 
-        // Determine sector (use getSectorForTicker for expanded list)
-        const sector = Object.entries(SECTORS).find(([, tickers]) =>
-            tickers.includes(ticker)
-        )?.[0] as 'MAJORS' | 'AI' | 'RWA' | 'MEME' | 'DEFI' | 'L2' | 'GAMING' || 'ALTCOIN';
+        // Determine sector/category
+        const category = tokenInfo.category;
 
         // Calculate composite confidence score
         const compositeConfidence = calculateCompositeScore({
             rsi: technicalAnalysis.rsi,
             bollingerPosition: technicalAnalysis.bollingerBands.percentB,
-            dexBuySellRatio: dexData?.buysSellsRatio || 1,
+            dexBuySellRatio: tokenInfo.sells24h > 0 ? tokenInfo.buys24h / tokenInfo.sells24h : 1,
             momentumScore: momentum?.score || 0,
             rank: cmcData?.rank || 100,
         });
@@ -121,13 +124,13 @@ export async function GET(request: NextRequest) {
         // Generate prediction with enhanced data
         const predictionInput: PredictionInput = {
             ticker,
-            name: priceData.name,
-            currentPrice: priceData.current_price,
-            volume24h: priceData.total_volume,
-            priceChange24h: priceData.price_change_percentage_24h,
+            name: tokenInfo.name,
+            currentPrice: tokenInfo.price,
+            volume24h: tokenInfo.volume24h,
+            priceChange24h: tokenInfo.priceChange24h,
             rsi: technicalAnalysis.rsi,
             bollingerPosition: technicalAnalysis.bollingerBands.percentB,
-            sector: sector as 'AI' | 'RWA' | 'MEME',
+            sector: category as 'AI' | 'RWA' | 'MEME',
         };
 
         const prediction = await generateProphecy(predictionInput);
@@ -140,12 +143,8 @@ export async function GET(request: NextRequest) {
             rsi: technicalAnalysis.rsi,
         });
 
-        // Get token image URL - prioritize DexScreener image, then fallback to our logos
-        const dexImage = dexData?.imageUrl || addressLookupResult?.imageUrl || null;
-        const tokenImageUrl = getBestTokenImage(ticker, dexImage);
-
-        // Calculate 6-month market cap prediction based on momentum and signals
-        const currentMarketCap = priceData.market_cap || dexData?.marketCap || 0;
+        // Calculate 6-month market cap prediction
+        const currentMarketCap = tokenInfo.marketCap || 0;
         const sixMonthPrediction = calculate6MonthPrediction({
             currentMarketCap,
             momentum: momentum?.score || 0,
@@ -157,27 +156,42 @@ export async function GET(request: NextRequest) {
 
         // Return comprehensive oracle response
         return NextResponse.json({
+            // Token Identity (FROM DEXSCREENER)
             ticker,
-            name: dexData?.tokenName || priceData.name,
-            image: tokenImageUrl,
-            address: addressLookupResult?.address || null,
-            chain: dexData?.chain || addressLookupResult?.chain || null,
-            price: priceData.current_price,
-            volume_24h: priceData.total_volume,
-            price_change_24h: priceData.price_change_percentage_24h,
+            name: tokenInfo.name,
+            image: tokenInfo.imageUrl,  // Direct from DexScreener
+            address: tokenInfo.address,
+            chain: tokenInfo.chain,
+            category: category,
+            category_emoji: getCategoryEmoji(category),
+
+            // Current Price Data
+            price: tokenInfo.price,
+            price_formatted: formatPrice(tokenInfo.price),
+            volume_24h: tokenInfo.volume24h,
+            volume_24h_formatted: formatMarketCap(tokenInfo.volume24h),
+            price_change_24h: tokenInfo.priceChange24h,
+
+            // Market Cap
             market_cap: currentMarketCap,
+            market_cap_formatted: formatMarketCap(currentMarketCap),
+            fdv: tokenInfo.fdv,
+            fdv_formatted: formatMarketCap(tokenInfo.fdv),
 
             // 6-Month Prediction
             prediction_6m: {
                 market_cap_low: sixMonthPrediction.lowEstimate,
+                market_cap_low_formatted: formatMarketCap(sixMonthPrediction.lowEstimate),
                 market_cap_mid: sixMonthPrediction.midEstimate,
+                market_cap_mid_formatted: formatMarketCap(sixMonthPrediction.midEstimate),
                 market_cap_high: sixMonthPrediction.highEstimate,
+                market_cap_high_formatted: formatMarketCap(sixMonthPrediction.highEstimate),
                 growth_percent: sixMonthPrediction.growthPercent,
                 confidence: sixMonthPrediction.confidence,
                 reasoning: sixMonthPrediction.reasoning,
             },
 
-            // Technical Analysis (from CoinGecko historical data)
+            // Technical Analysis
             technical: {
                 rsi: technicalAnalysis.rsi,
                 bollinger_position: technicalAnalysis.bollingerBands.percentB,
@@ -187,47 +201,31 @@ export async function GET(request: NextRequest) {
             },
 
             // DexScreener Data
-            dex: dexData ? {
-                liquidity_usd: dexData.liquidityUsd,
-                volume_24h: dexData.volume24h,
-                volume_6h: dexData.volume6h,
-                volume_1h: dexData.volume1h,
-                buys_24h: dexData.buys24h,
-                sells_24h: dexData.sells24h,
-                buys_sells_ratio: dexData.buysSellsRatio,
-                sentiment: dexSentiment?.signal,
-                sentiment_strength: dexSentiment?.strength,
-                top_pairs_count: dexData.topPairsCount,
-                dex_id: dexData.dexId,
-            } : null,
+            dex: {
+                liquidity_usd: tokenInfo.liquidity,
+                liquidity_formatted: formatMarketCap(tokenInfo.liquidity),
+                buys_24h: tokenInfo.buys24h,
+                sells_24h: tokenInfo.sells24h,
+                buys_sells_ratio: tokenInfo.sells24h > 0 ? (tokenInfo.buys24h / tokenInfo.sells24h).toFixed(2) : 'N/A',
+                sentiment: dexSentiment?.signal || 'NEUTRAL',
+                sentiment_strength: dexSentiment?.strength || 50,
+                dex_id: tokenInfo.dexId,
+                pair_address: tokenInfo.pairAddress,
+            },
 
             // CoinMarketCap Data
             cmc: cmcData ? {
                 rank: cmcData.rank,
-                ranking_tier: rankingTier?.tier,
-                ranking_description: rankingTier?.description,
+                ranking_tier: rankingTier?.tier || 'UNKNOWN',
+                ranking_description: rankingTier?.description || '',
                 percent_change_1h: cmcData.percentChange1h,
                 percent_change_7d: cmcData.percentChange7d,
                 percent_change_30d: cmcData.percentChange30d,
-                volume_change_24h: cmcData.volumeChange24h,
-                market_cap_dominance: cmcData.marketCapDominance,
-                fdv: cmcData.fullyDilutedMarketCap,
-                circulating_supply: cmcData.circulatingSupply,
-                total_supply: cmcData.totalSupply,
-                max_supply: cmcData.maxSupply,
+                momentum: momentum,
                 num_market_pairs: cmcData.numMarketPairs,
-                momentum: momentum ? {
-                    trend: momentum.trend,
-                    score: momentum.score,
-                    description: momentum.description,
-                } : null,
-                tags: cmcData.tags,
-                is_ai_token: cmcData.isAIToken,
-                is_rwa_token: cmcData.isRWAToken,
-                is_meme_token: cmcData.isMemeToken,
             } : null,
 
-            // Enhanced Prediction
+            // Oracle Prediction
             prediction: {
                 outlook: enhancedOutlook.outlook,
                 prophecy: prediction.prophecy,
@@ -237,20 +235,31 @@ export async function GET(request: NextRequest) {
                 signals_bearish: enhancedOutlook.bearishSignals,
             },
 
-            sector,
-            data_sources: ['coingecko', 'dexscreener', 'coinmarketcap'],
-            timestamp: new Date().toISOString(),
+            // Data source info
+            sector: category,
+            data_sources: ['DexScreener', isKnownCoin ? 'CoinGecko' : null, 'CoinMarketCap'].filter(Boolean),
+            source: tokenInfo.source,
         });
+
     } catch (error) {
         console.error('Oracle API error:', error);
         return NextResponse.json(
-            { error: 'Failed to generate prophecy. The quantum timeline is unstable.' },
+            { error: 'Failed to fetch prediction data. Please try again.' },
             { status: 500 }
         );
     }
 }
 
-// Calculate composite confidence score from multiple data sources
+// Helper functions
+
+function formatPrice(price: number): string {
+    if (price >= 1000) return `$${price.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+    if (price >= 1) return `$${price.toFixed(2)}`;
+    if (price >= 0.01) return `$${price.toFixed(4)}`;
+    if (price >= 0.0001) return `$${price.toFixed(6)}`;
+    return `$${price.toFixed(10)}`;
+}
+
 function calculateCompositeScore(params: {
     rsi: number;
     bollingerPosition: number;
@@ -260,28 +269,33 @@ function calculateCompositeScore(params: {
 }): number {
     const { rsi, bollingerPosition, dexBuySellRatio, momentumScore, rank } = params;
 
-    // RSI score (higher confidence at extremes)
-    const rsiScore = rsi < 30 || rsi > 70 ? 85 : 60;
+    // RSI score (oversold = bullish, overbought = bearish)
+    let rsiScore = 50;
+    if (rsi < 30) rsiScore = 80;
+    else if (rsi < 40) rsiScore = 65;
+    else if (rsi > 70) rsiScore = 30;
+    else if (rsi > 60) rsiScore = 45;
 
-    // Bollinger score
-    const bbScore = bollingerPosition < 0.2 || bollingerPosition > 0.8 ? 80 : 55;
+    // Bollinger position score
+    let bollingerScore = 50;
+    if (bollingerPosition < 0.2) bollingerScore = 75;
+    else if (bollingerPosition > 0.8) bollingerScore = 35;
 
-    // DEX sentiment score
-    const dexScore = Math.min(100, Math.max(40, 50 + (dexBuySellRatio - 1) * 30));
+    // DEX buy/sell ratio score
+    const ratioScore = Math.min(80, 40 + (dexBuySellRatio - 1) * 20);
 
-    // Momentum score
-    const momentumConfidence = Math.min(100, Math.max(40, 50 + momentumScore * 2));
-
-    // Rank bonus (higher ranked = more reliable data)
-    const rankBonus = rank <= 50 ? 10 : rank <= 100 ? 5 : 0;
+    // Momentum score (already -50 to +50 range, normalize to 0-100)
+    const normalizedMomentum = 50 + momentumScore;
 
     // Weighted average
-    const baseScore = (rsiScore * 0.25) + (bbScore * 0.2) + (dexScore * 0.3) + (momentumConfidence * 0.25);
+    const baseScore = (rsiScore * 0.25) + (bollingerScore * 0.2) + (ratioScore * 0.3) + (normalizedMomentum * 0.25);
+
+    // Bonus for high ranking tokens
+    const rankBonus = rank <= 50 ? 10 : rank <= 100 ? 5 : 0;
 
     return Math.round(Math.min(99, baseScore + rankBonus));
 }
 
-// Determine outlook from multiple signals
 function determineEnhancedOutlook(params: {
     technicalSignal: string;
     dexSentiment?: string;
@@ -295,28 +309,24 @@ function determineEnhancedOutlook(params: {
     const bullishSignals: string[] = [];
     const bearishSignals: string[] = [];
 
-    // Technical signal
     if (params.technicalSignal === 'OVERSOLD') {
         bullishSignals.push('RSI oversold - accumulation zone');
     } else if (params.technicalSignal === 'OVERBOUGHT') {
         bearishSignals.push('RSI overbought - distribution zone');
     }
 
-    // DEX sentiment
     if (params.dexSentiment === 'ACCUMULATING') {
         bullishSignals.push('DEX showing accumulation (high buy/sell ratio)');
     } else if (params.dexSentiment === 'DISTRIBUTING') {
         bearishSignals.push('DEX showing distribution (high sell pressure)');
     }
 
-    // Momentum
     if (params.momentumTrend === 'STRONG_UP' || params.momentumTrend === 'UP') {
         bullishSignals.push(`Multi-timeframe momentum: ${params.momentumTrend}`);
     } else if (params.momentumTrend === 'STRONG_DOWN' || params.momentumTrend === 'DOWN') {
         bearishSignals.push(`Multi-timeframe momentum: ${params.momentumTrend}`);
     }
 
-    // RSI directional bias
     if (params.rsi < 40) {
         bullishSignals.push('RSI indicates potential reversal zone');
     } else if (params.rsi > 60) {
@@ -328,7 +338,6 @@ function determineEnhancedOutlook(params: {
     return { outlook, bullishSignals, bearishSignals };
 }
 
-// Calculate 6-month market cap prediction
 function calculate6MonthPrediction(params: {
     currentMarketCap: number;
     momentum: number;
@@ -346,27 +355,18 @@ function calculate6MonthPrediction(params: {
 } {
     const { currentMarketCap, momentum, rsi, dexSentiment, priceChange30d, isBullish } = params;
 
-    // Base growth rate based on historical crypto cycles
-    let baseGrowthRate = 0.15; // 15% baseline for 6 months
-
-    // Adjust based on momentum score (-50 to +50 typical range)
+    let baseGrowthRate = 0.15;
     const momentumFactor = 1 + (momentum / 100);
 
-    // RSI adjustment (30-70 neutral, <30 bullish potential, >70 bearish risk)
     let rsiFactor = 1;
-    if (rsi < 30) rsiFactor = 1.3;  // Oversold = higher upside potential
-    else if (rsi > 70) rsiFactor = 0.7;  // Overbought = lower upside
+    if (rsi < 30) rsiFactor = 1.3;
+    else if (rsi > 70) rsiFactor = 0.7;
 
-    // DEX sentiment adjustment
     const sentimentFactor = 1 + ((dexSentiment - 50) / 200);
-
-    // Recent performance projection
     const recentPerformanceFactor = 1 + (priceChange30d / 200);
 
-    // Calculate combined growth multiplier
     const growthMultiplier = baseGrowthRate * momentumFactor * rsiFactor * sentimentFactor * recentPerformanceFactor;
 
-    // Determine prediction ranges
     const midGrowth = isBullish ? Math.max(0.1, growthMultiplier * 1.5) : Math.max(-0.2, growthMultiplier * 0.5);
     const lowGrowth = midGrowth * 0.5;
     const highGrowth = midGrowth * 2.5;
@@ -375,24 +375,22 @@ function calculate6MonthPrediction(params: {
     const midEstimate = currentMarketCap * (1 + midGrowth);
     const highEstimate = currentMarketCap * (1 + highGrowth);
 
-    // Calculate confidence based on data quality
     const confidence = Math.min(85, 50 + Math.abs(momentum) / 2 + (dexSentiment / 4));
 
-    // Generate reasoning
     let reasoning = '';
     if (isBullish) {
         if (midGrowth > 0.5) {
-            reasoning = 'Strong bullish indicators suggest significant upside potential. Multiple signals confirm accumulation phase.';
+            reasoning = 'Strong bullish indicators suggest significant upside potential.';
         } else if (midGrowth > 0.2) {
-            reasoning = 'Moderate bullish outlook with healthy momentum. Market conditions favor gradual appreciation.';
+            reasoning = 'Moderate bullish outlook with healthy momentum.';
         } else {
-            reasoning = 'Cautiously bullish. Some positive signals but limited near-term catalysts.';
+            reasoning = 'Cautiously bullish with limited near-term catalysts.';
         }
     } else {
         if (midGrowth < -0.1) {
-            reasoning = 'Bearish pressure detected. Consider waiting for better entry points.';
+            reasoning = 'Bearish pressure detected. Consider waiting for better entry.';
         } else {
-            reasoning = 'Neutral to slightly bearish. Consolidation phase expected before next major move.';
+            reasoning = 'Neutral to slightly bearish. Consolidation expected.';
         }
     }
 

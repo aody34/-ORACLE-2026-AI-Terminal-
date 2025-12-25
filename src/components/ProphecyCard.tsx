@@ -33,9 +33,14 @@ interface PredictionData {
     ticker: string;
     name: string;
     price: number;
+    price_formatted?: string;
     volume_24h: number;
+    volume_24h_formatted?: string;
     price_change_24h: number;
     market_cap: number;
+    market_cap_formatted?: string;
+    fdv?: number;
+    fdv_formatted?: string;
     technical: {
         rsi: number;
         bollinger_position: number;
@@ -52,18 +57,24 @@ interface PredictionData {
         signals_bearish?: string[];
     };
     sector: string;
-    image?: string;
+    category?: string;
+    category_emoji?: string;
+    image?: string | null;
     address?: string | null;
     chain?: string | null;
     prediction_6m?: {
         market_cap_low: number;
+        market_cap_low_formatted?: string;
         market_cap_mid: number;
+        market_cap_mid_formatted?: string;
         market_cap_high: number;
+        market_cap_high_formatted?: string;
         growth_percent: number;
         confidence: number;
         reasoning: string;
     };
     data_sources?: string[];
+    source?: string;
 }
 
 interface ProphecyCardProps {
@@ -143,6 +154,12 @@ export function ProphecyCard({ data, onClose }: ProphecyCardProps) {
                         <div className="flex-1">
                             <div className="flex items-center gap-3 flex-wrap">
                                 <h2 className="text-3xl font-bold">${data.ticker}</h2>
+                                {/* Category Badge */}
+                                {data.category && (
+                                    <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-white/10 text-white/70">
+                                        {data.category_emoji || '🪙'} {data.category}
+                                    </span>
+                                )}
                                 <span
                                     className={`px-3 py-1 rounded-full text-sm font-bold ${isBullish
                                         ? 'bg-emerald-500/20 text-emerald-400'
@@ -233,16 +250,16 @@ export function ProphecyCard({ data, onClose }: ProphecyCardProps) {
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ delay: 0.12 }}
                             className={`mb-6 p-4 rounded-xl border ${isBullish
-                                    ? 'bg-emerald-500/5 border-emerald-500/20'
-                                    : 'bg-red-500/5 border-red-500/20'
+                                ? 'bg-emerald-500/5 border-emerald-500/20'
+                                : 'bg-red-500/5 border-red-500/20'
                                 }`}
                         >
                             <div className="flex items-center gap-2 mb-3">
                                 <span className="text-lg">🔮</span>
                                 <span className="terminal-text text-sm text-white">6-MONTH MARKET CAP PREDICTION</span>
                                 <span className={`ml-auto px-2 py-0.5 rounded text-xs font-bold ${data.prediction_6m.growth_percent >= 0
-                                        ? 'bg-emerald-500/20 text-emerald-400'
-                                        : 'bg-red-500/20 text-red-400'
+                                    ? 'bg-emerald-500/20 text-emerald-400'
+                                    : 'bg-red-500/20 text-red-400'
                                     }`}>
                                     {data.prediction_6m.growth_percent >= 0 ? '+' : ''}{data.prediction_6m.growth_percent}% GROWTH
                                 </span>
